@@ -1,11 +1,17 @@
 #include "Arduino.h"
 #include "Ultrasound.h"
 
+/**
+ * Constructs an ultrasonic object, use the given pin to measure
+ * distance in front of the sensor at the pin.
+ */
 Ultrasound::Ultrasound(int pin) : _pin(pin) {}
 
+/**
+ * Returns the delay from when the ping was sent to when it was
+ * received, in ms. 
+ */
 long Ultrasound::getDelay() {
-  // Returns delay in ms
-
     pinMode(_pin, OUTPUT);
     digitalWrite(_pin, LOW);
     delayMicroseconds(2);
@@ -17,10 +23,18 @@ long Ultrasound::getDelay() {
     return pulseIn(_pin, HIGH);
 }
 
+/**
+ * Gets the distance between the sensor and the nearest object,
+ * in cm.
+ */
 long Ultrasound::getCm() {
     return msToCm(getDelay());
 }
 
+/**
+ * Gets the distance between the sensor and the nearest object,
+ * in inches.
+ */
 long Ultrasound::getInches() {
     return msToInches(getDelay());
 }
