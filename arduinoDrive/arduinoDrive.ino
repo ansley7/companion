@@ -1,4 +1,4 @@
-#include <Arduino_FreeRTOS.h>
+//#include <Arduino_FreeRTOS.h>
 #include "Ultrasound.h"
 #include "MotorControl.h"
 
@@ -43,9 +43,9 @@ Ultrasound usCenter(us_center_port);
 
 void setup() {
   Serial.begin(9600);
-  xTaskCreate(drive,        (const portCHAR *) "Driving",         128, NULL, 1, NULL);
-  xTaskCreate(updateOrders, (const portCHAR *) "Updating Orders", 128, NULL, 2, NULL);
-  xTaskCreate(pollSensors,  (const portCHAR *) "Polling Sensors", 128, NULL, 3, NULL);
+  //xTaskCreate(drive,        (const portCHAR *) "Driving",         128, NULL, 1, NULL);
+  //xTaskCreate(updateOrders, (const portCHAR *) "Updating Orders", 128, NULL, 2, NULL);
+  //xTaskCreate(pollSensors,  (const portCHAR *) "Polling Sensors", 128, NULL, 3, NULL);
   halt(); // so we dont move when we start i guess. inA or inB might start high for some reason
 }
 
@@ -53,7 +53,7 @@ void setup() {
  * Polls the ultrasonic sensors and updates the distances each is reading.
  * Executed and scheduled by FreeRTOS. 
  */
-void pollSensors(void *pvParameters) {
+/*void pollSensors(void *pvParameters) {
   while (1) {
     // get the distance each sensor is reading, in cm
     leftDist = usLeft.getCm();
@@ -87,9 +87,9 @@ void pollSensors(void *pvParameters) {
     // delay by 150ms
     vTaskDelay(150 / portTICK_PERIOD_MS);
   }
-}
+}*/
 
-void drive(void *pvParameters) {
+/*void drive(void *pvParameters) {
   while (1) {
     // freeroam. it just go (tm)
     if (do_drive) {
@@ -122,12 +122,12 @@ void drive(void *pvParameters) {
     // delay by 50ms
     vTaskDelay(50 / portTICK_PERIOD_MS);
   }
-}
+}*/
 
 /**
  * Updates the state of the robot with commands coming over serial.
  */
-void updateOrders(void *pvParameters) {
+/*void updateOrders(void *pvParameters) {
   while (1) {
     if (Serial.available() > 0) {
       switch (Serial.read()) {
@@ -145,10 +145,83 @@ void updateOrders(void *pvParameters) {
     // delay by 50ms
     vTaskDelay(50 / portTICK_PERIOD_MS);
   }
-}
+}*/
 
 void loop() {
-  // everything is run by RTOS, no need to use loop
+  // Poll sensors
+  // get the distance each sensor is reading, in cm
+  leftDist = usLeft.getCm();
+  rightDist = usRight.getCm();
+  centerDist = usCenter.getCm();
+
+  iter += 1;
+  // don't flood too much, only print every so often
+  // 
+  if (iter % 50 == 0) {
+    iter = 0;
+    // print the distances
+    Serial.print("Dist: [");
+    Serial.print(leftDist);
+    Serial.print(", ");
+    Serial.print(centerDist);
+    Serial.print(", ");
+    Serial.print(rightDist);
+    Serial.println("]");
+
+    // print whether each sensor detected an object
+    Serial.print("Stop: [");
+    Serial.print(leftDist <= STOP_DIST_SIDE);
+    Serial.print(", ");
+    Serial.print(centerDist <= STOP_DIST_CENTER);
+    Serial.print(", ");
+    Serial.print(rightDist <= STOP_DIST_SIDE);
+    Serial.println("]");
+  }
+
+  // Drive
+  // freeroam. it just go (tm)
+  if (do_drive) {
+    // check if there's something in front of us
+    if (centerDist <= STOP_DIST_CENTER) {
+      // There is something in front of us, avoid
+      // check if there's more space on the right
+      if (leftDist < rightDist) {
+        // more space on the right
+        right();
+      } else {
+        // more space on the left
+        left();
+      }
+    } else if (leftDist <= STOP_DIST_SIDE) {
+      // nothing in front but something on the left
+      right();
+    } else if (rightDist <= STOP_DIST_SIDE) {
+      // nothing in front but something on the right
+      left();
+    } else {
+      // nothing to avoid, power on
+      forward();
+    }
+  } else {
+    // dont drive
+    halt();
+  }
+
+  // get commands
+  if (Serial.available() > 0) {
+    switch (Serial.read()) {
+      case 'g':
+        do_drive = true; 
+        break;
+      case 's':
+        do_drive = false;
+        break;
+      default:
+        break;
+    }
+  }
+
+  delay(30);
 }
 
 /**
