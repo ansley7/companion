@@ -39,10 +39,10 @@ long Ultrasound::getInches() {
     return msToInches(getDelay());
 }
 
-static long Ultrasound::msToInches(long ms) {
+long Ultrasound::msToInches(long ms) {
     return ms / 74 / 2;
 }
 
-static long Ultrasound::msToCm(long ms) {
+long Ultrasound::msToCm(long ms) {
     return ms / 29 / 2;
 }

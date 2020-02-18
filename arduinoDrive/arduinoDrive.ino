@@ -14,13 +14,13 @@ const int STOP_DIST_SIDE = 10;
 const int m_left_a = 11;
 const int m_left_b = 10;
 const int m_left_p = 6;
-const int m_right_a = 13;
-const int m_right_b = 2; // port 12 is kinda messed up so we moved to 2
+const int m_right_a = 12;
+const int m_right_b = 13; // port 12 is kinda messed up so we moved to 2 (switched back to 12)
 const int m_right_p = 5;
 
 // Ultrasonic ports
-const int us_left_port = 7;
-const int us_right_port = 8;
+const int us_left_port = 8; //We cannot us pin 7 so we moved it to 8
+const int us_right_port = 9;
 const int us_center_port = 4;
 
 // State variables for the robot
@@ -41,8 +41,11 @@ Ultrasound usLeft(us_left_port);
 Ultrasound usRight(us_right_port);
 Ultrasound usCenter(us_center_port);
 
+const int switch_port = 2;
+
 void setup() {
   Serial.begin(9600);
+  pinMode(switch_port, INPUT_PULLUP);
   xTaskCreate(drive,        (const portCHAR *) "Driving",         128, NULL, 1, NULL);
   xTaskCreate(updateOrders, (const portCHAR *) "Updating Orders", 128, NULL, 2, NULL);
   xTaskCreate(pollSensors,  (const portCHAR *) "Polling Sensors", 128, NULL, 3, NULL);
@@ -63,7 +66,7 @@ void pollSensors(void *pvParameters) {
     iter += 1;
     // don't flood too much, only print every so often
     // 
-    if (iter % 10 == 0) {
+    if (true/*iter % 10 == 0*/) {
       iter = 0;
       // print the distances
       Serial.print("Dist: [");
@@ -92,7 +95,7 @@ void pollSensors(void *pvParameters) {
 void drive(void *pvParameters) {
   while (1) {
     // freeroam. it just go (tm)
-    if (do_drive) {
+    if (do_drive && get_switch()) {
       // check if there's something in front of us
       if (centerDist <= STOP_DIST_CENTER) {
         // There is something in front of us, avoid
@@ -122,6 +125,10 @@ void drive(void *pvParameters) {
     // delay by 50ms
     vTaskDelay(50 / portTICK_PERIOD_MS);
   }
+}
+
+inline bool get_switch() {
+  return digitalRead(switch_port) != HIGH;
 }
 
 /**
