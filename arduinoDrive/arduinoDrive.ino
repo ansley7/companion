@@ -6,8 +6,8 @@
 // The pwm for the motors
 byte spd = 60;
 // The distance in cm at which we try to avoid an object
-const int STOP_DIST_CENTER = 15;
-const int STOP_DIST_SIDE = 10;
+const int STOP_DIST_CENTER = 20;
+const int STOP_DIST_SIDE = 15;
 
 /*  2DIAG, 2INA, 2INB, 2PWM, 2CS, VIN, GND, 5VIN, GND, VIN, 1CS, 1PWM, 1INB, 1INA, 1DIAG  */
 // Motor ports
@@ -19,18 +19,20 @@ const int m_right_b = 13; // port 12 is kinda messed up so we moved to 2 (switch
 const int m_right_p = 5;
 
 // Ultrasonic ports
-const int us_left_port = 8; //We cannot us pin 7 so we moved it to 8
-const int us_right_port = 9;
+const int us_left_port = 9; //We cannot us pin 7 so we moved it to 8
+const int us_right_port = 8;
 const int us_center_port = 4;
 
 // State variables for the robot
 // The most recent distance read from each ultrasonic
 long leftDist=0, rightDist=0, centerDist=0;
 // Whether to drive right now or not
-bool do_drive = false;
+bool do_drive = true;
 // The number of iterations the loop polling the sensors had done
 // used to lower spam in the console. 
 int iter = 0;
+unsigned long start_evade = 0;
+bool evade_right = false;
 
 // Construct the motor controllers
 MotorControl mLeft(m_left_a, m_left_b, m_left_p);
@@ -97,16 +99,20 @@ void drive(void *pvParameters) {
     // freeroam. it just go (tm)
     if (do_drive && get_switch()) {
       // check if there's something in front of us
-      if (centerDist <= STOP_DIST_CENTER) {
-        // There is something in front of us, avoid
-        // check if there's more space on the right
-        if (leftDist < rightDist) {
-          // more space on the right
+      if (start_evade != 0 && millis() - start_evade < 1000l) {
+        backward();
+      } else if (start_evade != 0 && millis() - start_evade < 1500l) {
+        if (evade_right) {
           right();
         } else {
-          // more space on the left
           left();
         }
+      } else if (centerDist <= STOP_DIST_CENTER || (leftDist <= STOP_DIST_SIDE && rightDist <= STOP_DIST_SIDE)) {
+        // There is something in front of us, avoid
+        // check if there's more space on the right
+        start_evade = millis();
+        backward();
+        evade_right = !evade_right;
       } else if (leftDist <= STOP_DIST_SIDE) {
         // nothing in front but something on the left
         right();
@@ -180,7 +186,7 @@ void halt() {
  * the robot moves forward.
  */
 void forward() {
-  set_speed(spd, spd);
+  set_speed(spd, spd+11);
   mLeft.backward();
   mRight.forward();
 }
@@ -190,7 +196,7 @@ void forward() {
  * the robot moves backward.
  */
 void backward() {
-  set_speed(spd, spd);
+  set_speed(spd, spd+11);
   mLeft.forward();
   mRight.backward();
 }
