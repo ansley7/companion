@@ -61,9 +61,6 @@ def largest_single_color(frame, hues):
     largest = None
     poss = None
     lineColor = None
-    # create a black image to draw contours on
-    out = cv2.inRange(frame, (0, 0, 0), (0, 0, 0))
-    out = cv2.bitwise_or(frame, frame, mask=out)
     
     for hmin, hmax in hues:
         mask = cv2.inRange(frame, (hmin, smin, vmin), (hmax, vmax, smax))
@@ -74,17 +71,9 @@ def largest_single_color(frame, hues):
             if largest is None or cv2.contourArea(poss) > cv2.contourArea(largest):
                 largest = poss
                 lineColor = (int(hmin + (hmax-hmin)/2), 240, 240)
-    if largest is not None:
-        m = cv2.moments(largest)
-        cv2.circle(out, (int(m["m10"] / m["m00"]), int(m["m01"] / m["m00"])), 5, lineColor, -1)
-        cv2.drawContours(out, [largest], 0, lineColor, 3)
-    out = cv2.cvtColor(out, cv2.COLOR_HSV2BGR)
-    return out    
+    return largest, lineColor
 
 def largest_merge_colors(frame, hues):
-    # create a black image to draw contours on
-    out = cv2.inRange(frame, (0, 0, 0), (0, 0, 0))
-    out = cv2.bitwise_or(frame, frame, mask=out)
     mask = None
     for hmin, hmax in hues:
         if mask is None:
@@ -94,12 +83,16 @@ def largest_merge_colors(frame, hues):
     _, contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     if len(contours) > 0:
         cont = max(contours, key=cv2.contourArea)
-        m = cv2.moments(cont)
         lineColor = (5, 240, 240)
-        cv2.circle(out, (int(m["m10"] / m["m00"]), int(m["m01"] / m["m00"])), 5, lineColor, -1)
-        cv2.drawContours(out, [cont], 0, lineColor, 3)
-    out = cv2.cvtColor(out, cv2.COLOR_HSV2BGR)
-    return out
+    else:
+        cont = None
+        lineColor = None
+    return (cont, lineColor)
+
+def get_black_image(frame):
+    out = cv2.inRange(frame, (0, 0, 0), (0, 0, 0))
+    return cv2.bitwise_or(frame, frame, mask=out)
+    
 
 def main():
     #global hmin
@@ -124,7 +117,14 @@ def main():
         #mask = cv2.inRange(frame, (hmin, smin, vmin), (hmax, vmax, smax))
         #frame = cv2.bitwise_or(frame, frame, mask=mask)
         #frame = cv2.cvtColor(frame, cv2.COLOR_HSV2BGR)
-        out = largest_merge_colors(frame, hues)
+        out = frame
+    
+        cont, color = largest_single_color(frame, hues)
+        if cont is not None:
+            m = cv2.moments(cont)
+            cv2.circle(out, (int(m["m10"] / m["m00"]), int(m["m01"] / m["m00"])), 5, color, -1)
+            cv2.drawContours(out, [cont], 0, color, 3)
+        out = cv2.cvtColor(out, cv2.COLOR_HSV2BGR)
         cv2.imshow("res", out)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
