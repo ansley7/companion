@@ -1,7 +1,7 @@
 import cv2
-import imutils
-from imutils.video import WebcamVideoStream as wvs
 import numpy as np
+import os
+import serial
 from typing import Iterable, Tuple
 
 def get_black_image(frame):
@@ -37,6 +37,7 @@ class LegoTracker:
         self.width = width
         self.height = height
         self.find_single = find_single
+        self.current_size = None
         self.current_direction = None
         self.side_color = {
             -1: (300, 240, 240),
@@ -44,6 +45,10 @@ class LegoTracker:
             1: (120, 240, 240)
             }
 
+    def get_max_contour(self, contours):
+        contours = filter(lambda cont: len([pt for pt in cont if pt[0][1] < self.horizon]) == 0 and cv2.contourArea(cont) > 100, contours)
+        return max(contours, key=cv2.contourArea, default=None)
+        
     def largest_merge(self, frame):
         mask = None
         smin, smax = self.saturation_range
@@ -54,9 +59,7 @@ class LegoTracker:
             else:
                 mask = cv2.bitwise_or(mask, cv2.inRange(frame, (hmin, smin, vmin), (hmax, smax, vmax)))
         _, contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        contours = filter(lambda cont: len([pt for pt in cont if pt[0][1] < self.horizon]) == 0, contours)
-        cont = max(contours, key=cv2.contourArea, default=None)
-        return cont, (5, 240, 240)
+        return self.get_max_contours(contours), (5, 240, 240)
 
     def largest_single(self, frame):
         largest = None
@@ -66,8 +69,7 @@ class LegoTracker:
         for hmin, hmax in self.hues:
             mask = cv2.inRange(frame, (hmin, smin, vmin), (hmax, smax, vmax))
             _, contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            contours = filter(lambda cont: len([pt for pt in cont if pt[0][1] < self.horizon]) == 0, contours)
-            poss = max(contours, key=cv2.contourArea, default=None)
+            poss = self.get_max_contour(contours)
             if poss is not None and (largest is None or cv2.contourArea(poss) > cv2.contourArea(largest)):
                 largest = poss
                 lineColor = (int(hmin + (hmax-hmin)/2), 240, 240)
@@ -131,9 +133,12 @@ class LegoTracker:
         color = self.side_color.get(self.current_direction, (0, 240, 240))
 
         cv2.putText(frame, direction, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        cv2.putText(frame, "Size: "+str(self.current_size), (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
         
     def update(self, frame, draw=False):
         cont, color = self.get_contour(frame)
+        if cont is not None:
+            self.current_size = cv2.contourArea(cont)
         self.current_direction = self.get_side(cv2.moments(cont))
         if draw:
             self.draw_contour(frame, cont, color)
@@ -167,17 +172,26 @@ def main():
     
     hues = (red_hue, orange_hue, lime_hue, green_hue, sky_hue)
 
-    tracker = LegoTracker(hues, 50, 110, (91/95), 127, int(0.3125 * h), w, h, True)
+    tracker = LegoTracker(hues, 50, 110, -1.519, 1.320, 616, -665, 0, w, h, True)
 
     v.set(cv2.CAP_PROP_FRAME_HEIGHT, cap_width)
     v.set(cv2.CAP_PROP_FRAME_WIDTH, cap_height)
     v.set(cv2.CAP_PROP_FPS, 24)
-    
+
+    comm = None
+    comm_text = "No connection"
     debug = True
     while True:
         _, frame = v.read()
         if frame is None:
             break
+        inp = cv2.waitKey(1) & 0xFF
+        if inp == ord("q"):
+            break
+        if inp == ord("s"):
+            tracker.find_single = not tracker.find_single
+        if inp == ord("d"):
+            debug = not debug
 
         frame = cv2.resize(frame, (w,h), interpolation=cv2.INTER_AREA)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -187,18 +201,31 @@ def main():
         out = frame
 
         tracker.update(out, draw=debug)
+        if inp == ord("c"):
+            if comm is None or comm.closed():
+                if os.path.exists("/dev/ttyUSB0"):
+                    path = "/dev/ttyUSB0"
+                elif os.path.exists("/dev/ttyACM0"):
+                    path = "/dev/ttyACM0"
+                else:
+                    path = None
+                if path is not None:
+                    cv2.putText(out, "Connecting...", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 240, 240), 1)
+                    try:
+                        comm = serial.Serial(path, 9600, write_timeout=0)
+                    except serial.SerialExcpetion:
+                        pass
+                    if comm is not None:
+                        comm_text = "Connected on " + path
+                    else:
+                        comm_text = "No connection"
+        else:
+            cv2.putText(out, comm_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 240, 240), 1)
         
         # draw the image - convert to BGR since cv2 uses bgr to draw
         out = cv2.cvtColor(out, cv2.COLOR_HSV2BGR)
         cv2.imshow("res", out)
 
-        inp = cv2.waitKey(1) & 0xFF
-        if inp == ord("q"):
-            break
-        if inp == ord("s"):
-            tracker.find_single = not tracker.find_single
-        if inp == ord("d"):
-            debug = not debug
 
     #v.release()
     cv2.destroyAllWindows()
@@ -210,3 +237,6 @@ if __name__ == "__main__":
 # at 260, (460-190) = 270 -> 1ft
 # at 350, (555-90) = 465 -> 1ft
 # at 400, (605-40) = 565 -> 1ft
+# 357 609 @ 107
+# 50, 540 and 960/2 - 125, 107
+# 913, 540 and 960/2 + 125, 107
