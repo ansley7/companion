@@ -1,3 +1,5 @@
+#ifndef MOTORCONTROL_H
+#define MOTORCONTROL_H
 /**
  * A class to control one side of a Pololu MD03A motor driver, or equivalent.
  * 
@@ -76,3 +78,4 @@ class MotorControl {
       digitalWrite(this->inB_pin, LOW);
     }
 };
+#endif
