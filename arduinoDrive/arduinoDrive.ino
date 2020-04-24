@@ -28,8 +28,12 @@ const int us_center_port = 4;
 long leftDist=0, rightDist=0, centerDist=0;
 // Whether to drive right now or not
 bool do_drive = true;
+enum drive_states {
+  SEARCH, GO_LEFT, GO_FORWARD, GO_RIGHT
+};
+int drive_state = SEARCH;
 // The number of iterations the loop polling the sensors had done
-// used to lower spam in the console. 
+// used to lower spam in the console.
 int iter = 0;
 unsigned long start_evade = 0;
 bool evade_right = false;
@@ -48,9 +52,9 @@ const int switch_port = 2;
 void setup() {
   Serial.begin(9600);
   pinMode(switch_port, INPUT_PULLUP);
-  xTaskCreate(drive,        (const portCHAR *) "Driving",         128, NULL, 1, NULL);
-  xTaskCreate(updateOrders, (const portCHAR *) "Updating Orders", 128, NULL, 2, NULL);
-  xTaskCreate(pollSensors,  (const portCHAR *) "Polling Sensors", 128, NULL, 3, NULL);
+  xTaskCreate(drive,        "Driving",         128, NULL, 1, NULL);
+  xTaskCreate(updateOrders, "Updating Orders", 128, NULL, 2, NULL);
+  xTaskCreate(pollSensors,  "Polling Sensors", 128, NULL, 3, NULL);
   halt(); // so we dont move when we start i guess. inA or inB might start high for some reason
 }
 
@@ -67,7 +71,6 @@ void pollSensors(void *pvParameters) {
 
     iter += 1;
     // don't flood too much, only print every so often
-    // 
     if (true/*iter % 10 == 0*/) {
       iter = 0;
       // print the distances
@@ -96,40 +99,62 @@ void pollSensors(void *pvParameters) {
 
 void drive(void *pvParameters) {
   while (1) {
-    // freeroam. it just go (tm)
-    if (do_drive && get_switch()) {
-      // check if there's something in front of us
-      if (start_evade != 0 && millis() - start_evade < 1000l) {
-        backward();
-      } else if (start_evade != 0 && millis() - start_evade < 1500l) {
-        if (evade_right) {
-          right();
-        } else {
-          left();
-        }
-      } else if (centerDist <= STOP_DIST_CENTER || (leftDist <= STOP_DIST_SIDE && rightDist <= STOP_DIST_SIDE)) {
-        // There is something in front of us, avoid
-        // check if there's more space on the right
-        start_evade = millis();
-        backward();
-        evade_right = !evade_right;
-      } else if (leftDist <= STOP_DIST_SIDE) {
-        // nothing in front but something on the left
-        right();
-      } else if (rightDist <= STOP_DIST_SIDE) {
-        // nothing in front but something on the right
-        left();
-      } else {
-        // nothing to avoid, power on
-        forward();
-      }
-    } else {
-      // dont drive
+    if (!do_drive || !get_switch()) {
+      // don't drive
       halt();
+      // delay by 50ms
+      vTaskDelay(50 / portTICK_PERIOD_MS);
+      continue;
+    }
+
+    switch (drive_state) {
+      case SEARCH:
+        drive_freeroam();
+        break;
+      case GO_LEFT:
+        left();
+        break;
+      case GO_RIGHT:
+        right();
+        break;
+      case GO_FORWARD:
+        forward();
+        break;
+      default:
+        halt();
+        break;
     }
 
     // delay by 50ms
     vTaskDelay(50 / portTICK_PERIOD_MS);
+  }
+}
+
+void drive_freeroam() {
+  // check if there's something in front of us
+  if (start_evade != 0 && millis() - start_evade < 1000l) {
+    backward();
+  } else if (start_evade != 0 && millis() - start_evade < 1500l) {
+    if (evade_right) {
+      right();
+    } else {
+      left();
+    }
+  } else if (centerDist <= STOP_DIST_CENTER || (leftDist <= STOP_DIST_SIDE && rightDist <= STOP_DIST_SIDE)) {
+    // There is something in front of us, avoid
+    // check if there's more space on the right
+    start_evade = millis();
+    backward();
+    evade_right = !evade_right;
+  } else if (leftDist <= STOP_DIST_SIDE) {
+    // nothing in front but something on the left
+    right();
+  } else if (rightDist <= STOP_DIST_SIDE) {
+    // nothing in front but something on the right
+    left();
+  } else {
+    // nothing to avoid, power on
+    forward();
   }
 }
 
@@ -145,10 +170,22 @@ void updateOrders(void *pvParameters) {
     if (Serial.available() > 0) {
       switch (Serial.read()) {
         case 'g':
-          do_drive = true; 
+          do_drive = true;
           break;
-        case 's':
+        case 'q':
           do_drive = false;
+          break;
+        case 'r': // turn right to get brick
+          drive_state = GO_RIGHT;
+          break;
+        case 'l': // turn right to get brick
+          drive_state = GO_LEFT;
+          break;
+        case 'f': // turn right to get brick
+          drive_state = GO_FORWARD;
+          break;
+        case 's': // turn right to get brick
+          drive_state = SEARCH;
           break;
         default:
           break;
