@@ -4,9 +4,11 @@ import os
 import serial
 from typing import Iterable, Tuple
 
+
 def get_black_image(frame):
     out = cv2.inRange(frame, (0, 0, 0), (0, 0, 0))
     return cv2.bitwise_or(frame, frame, mask=out)
+
 
 def check_cont(cont):
     return cv2.approxPolyDP(cont, 0.005*cv2.arcLength(cont, True), True)
@@ -16,23 +18,28 @@ def check_cont(cont):
 # y = mx + (y1 - mx1)
 # (0, y1 - mx1), (w, mw + y1 - mx1
 
+
 class LegoTracker:
     def __init__(self,
-                 hues: Iterable[Tuple[int,int]],
-                 saturation_min: int,#Tuple[int,int],
-                 value_min: int,#Tuple[int,int],
-                 boundary_slope: float,
-                 boundary_yint: int,
+                 hues: Iterable[Tuple[int, int]],
+                 saturation_min: int,
+                 value_min: int,
+                 left_slope: float,
+                 right_slope: float,
+                 left_yint: int,
+                 right_yint: int,
                  horizon: int,
                  width: int,
                  height: int,
                  find_single: bool,
-    ):
+                 ):
         self.hues = hues
         self.saturation_range = (saturation_min, 255)
         self.value_range = (value_min, 255)
-        self.boundary_slope = boundary_slope
-        self.boundary_yint = boundary_yint
+        self.left_slope = left_slope
+        self.left_yint = left_yint
+        self.right_slope = right_slope
+        self.right_yint = right_yint
         self.horizon = horizon
         self.width = width
         self.height = height
@@ -46,9 +53,11 @@ class LegoTracker:
             }
 
     def get_max_contour(self, contours):
-        contours = filter(lambda cont: len([pt for pt in cont if pt[0][1] < self.horizon]) == 0 and cv2.contourArea(cont) > 100, contours)
+        contours = filter(lambda cont: (len([pt for pt in cont if pt[0][1] < self.horizon]) == 0) and
+                                       (cv2.contourArea(cont) > 100),
+                          contours)
         return max(contours, key=cv2.contourArea, default=None)
-        
+
     def largest_merge(self, frame):
         mask = None
         smin, smax = self.saturation_range
@@ -59,7 +68,7 @@ class LegoTracker:
             else:
                 mask = cv2.bitwise_or(mask, cv2.inRange(frame, (hmin, smin, vmin), (hmax, smax, vmax)))
         _, contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        return self.get_max_contours(contours), (5, 240, 240)
+        return self.get_max_contour(contours), (5, 240, 240)
 
     def largest_single(self, frame):
         largest = None
@@ -68,7 +77,7 @@ class LegoTracker:
         vmin, vmax = self.value_range
         for hmin, hmax in self.hues:
             mask = cv2.inRange(frame, (hmin, smin, vmin), (hmax, smax, vmax))
-            _, contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             poss = self.get_max_contour(contours)
             if poss is not None and (largest is None or cv2.contourArea(poss) > cv2.contourArea(largest)):
                 largest = poss
@@ -80,10 +89,10 @@ class LegoTracker:
             return None
         y = int(moment["m01"]/moment["m00"])
         x = int(moment["m10"]/moment["m00"])
-        if -x*self.boundary_slope + self.boundary_yint + ((self.width/2)*self.boundary_slope) > y:
-            return -1 # left
-        if x*self.boundary_slope + self.boundary_yint - ((self.width/2)*self.boundary_slope) > y:
-            return 1 # right
+        if x*self.left_slope + self.left_yint > y:
+            return -1  # left
+        if x*self.right_slope + self.right_yint > y:
+            return 1  # right
         return 0
 
     def get_contour(self, frame):
@@ -91,7 +100,7 @@ class LegoTracker:
             return self.largest_single(frame)
         else:
             return self.largest_merge(frame)
-    
+
     def draw_contour(self, frame, cont, color):
         if cont is not None:
             m = cv2.moments(cont)
@@ -106,7 +115,7 @@ class LegoTracker:
 
                 cv2.circle(frame, (cx, cy), 5, color, -1)
             cv2.drawContours(frame, [cont], 0, color, 3)
-            
+
     def draw_guides(self, frame):
         # horizon
         cv2.line(frame, (0, self.horizon), (self.width, self.horizon), (0, 0, 0), 1)
@@ -115,12 +124,17 @@ class LegoTracker:
 
         # boundary lines
         # left
-        cv2.line(frame, (0, int(self.boundary_yint+((self.width/2)*self.boundary_slope))), (self.width, int(-self.width*self.boundary_slope + self.boundary_yint+((self.width/2)*self.boundary_slope))), (0, 240, 240), 1)
+        cv2.line(frame,
+                 (0, self.left_yint),
+                 (self.width, int(self.width*self.left_slope + self.left_yint)),
+                 (0, 240, 240), 1)
         # right
-        cv2.line(frame, (0, int(self.boundary_yint-((self.width/2)*self.boundary_slope))), (self.width, int(self.width*self.boundary_slope + self.boundary_yint-((self.width/2)*self.boundary_slope))), (0, 240, 240), 1)
+        cv2.line(frame,
+                 (0, self.right_yint),
+                 (self.width, int(self.width*self.right_slope + self.right_yint)),
+                 (0, 240, 240), 1)
 
     def write_text(self, frame):
-        
         directions = {
             -1: "Left",
             0: "Forward",
@@ -129,12 +143,12 @@ class LegoTracker:
         }
 
         direction = "Direction: " + directions[self.current_direction]
-        
+
         color = self.side_color.get(self.current_direction, (0, 240, 240))
 
         cv2.putText(frame, direction, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
         cv2.putText(frame, "Size: "+str(self.current_size), (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-        
+
     def update(self, frame, draw=False):
         cont, color = self.get_contour(frame)
         if cont is not None:
@@ -145,19 +159,34 @@ class LegoTracker:
             self.draw_guides(frame)
             self.write_text(frame)
 
+
+def serial_out(comm, buf):
+    if comm is not None:
+        comm.write(buf)
+    print("[Serial] > {}".format(buf))
+
+
+def serial_in(comm):
+    if comm is not None and comm.in_waiting > 0:
+        inp = comm.read_all()
+        inp = inp.splitlines()
+        for line in inp:
+            print("[Serial] < {}".format(line))
+
+
 def main():
-    #global hmin
-    #global hmax
+    # global hmin
+    # global hmax
     cv2.namedWindow("res")
-    
-    #hmin, hmax = red_hue
-    
-    #cv2.createTrackbar("Hue: red, orange, lime, green, sky", "res", 0, 4, set_hue)
-    #cv2.createTrackbar("H max", "res", hmax, 360, set_hmax)
-    #cv2.createTrackbar("S min", "res", smin, 255, set_smin)
-    #cv2.createTrackbar("S max", "res", smax, 255, set_smax)
-    #cv2.createTrackbar("V min", "res", vmin, 255, set_vmin)
-    #cv2.createTrackbar("V max", "res", vmax, 255, set_vmax)
+
+    # hmin, hmax = red_hue
+
+    # cv2.createTrackbar("Hue: red, orange, lime, green, sky", "res", 0, 4, set_hue)
+    # cv2.createTrackbar("H max", "res", hmax, 360, set_hmax)
+    # cv2.createTrackbar("S min", "res", smin, 255, set_smin)
+    # cv2.createTrackbar("S max", "res", smax, 255, set_smax)
+    # cv2.createTrackbar("V min", "res", vmin, 255, set_vmin)
+    # cv2.createTrackbar("V max", "res", vmax, 255, set_vmax)
     v = cv2.VideoCapture(1)
     cap_width = 1920
     cap_height = 1080
@@ -169,7 +198,7 @@ def main():
     lime_hue = 33, 48
     sky_hue = 92, 105
     green_hue = 65, 79
-    
+
     hues = (red_hue, orange_hue, lime_hue, green_hue, sky_hue)
 
     tracker = LegoTracker(hues, 50, 110, -1.519, 1.320, 616, -665, 0, w, h, True)
@@ -178,12 +207,22 @@ def main():
     v.set(cv2.CAP_PROP_FRAME_WIDTH, cap_height)
     v.set(cv2.CAP_PROP_FPS, 24)
 
+    last_sent = ord("s")
+    msg = 0
+    dir_to_char = {
+        -1: b"l",
+        0: b"f",
+        1: b"r",
+        None: b"s"
+    }
+
     comm = None
     comm_text = "No connection"
     debug = True
     while True:
         _, frame = v.read()
         if frame is None:
+            print("No frame, exiting.")
             break
         inp = cv2.waitKey(1) & 0xFF
         if inp == ord("q"):
@@ -195,14 +234,14 @@ def main():
 
         frame = cv2.resize(frame, (w,h), interpolation=cv2.INTER_AREA)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        #mask = cv2.inRange(frame, (hmin, smin, vmin), (hmax, vmax, smax))
-        #frame = cv2.bitwise_or(frame, frame, mask=mask)
-        #frame = cv2.cvtColor(frame, cv2.COLOR_HSV2BGR)
+        # mask = cv2.inRange(frame, (hmin, smin, vmin), (hmax, vmax, smax))
+        # frame = cv2.bitwise_or(frame, frame, mask=mask)
+        # frame = cv2.cvtColor(frame, cv2.COLOR_HSV2BGR)
         out = frame
 
         tracker.update(out, draw=debug)
         if inp == ord("c"):
-            if comm is None or comm.closed():
+            if comm is None or comm.closed:
                 if os.path.exists("/dev/ttyUSB0"):
                     path = "/dev/ttyUSB0"
                 elif os.path.exists("/dev/ttyACM0"):
@@ -213,7 +252,7 @@ def main():
                     cv2.putText(out, "Connecting...", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 240, 240), 1)
                     try:
                         comm = serial.Serial(path, 9600, write_timeout=0)
-                    except serial.SerialExcpetion:
+                    except serial.SerialException:
                         pass
                     if comm is not None:
                         comm_text = "Connected on " + path
@@ -221,14 +260,19 @@ def main():
                         comm_text = "No connection"
         else:
             cv2.putText(out, comm_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 240, 240), 1)
-        
+            msg = dir_to_char[tracker.current_direction]
+            if msg != last_sent:
+                serial_out(comm, msg)
+                last_sent = msg
+            serial_in(comm)
+
         # draw the image - convert to BGR since cv2 uses bgr to draw
         out = cv2.cvtColor(out, cv2.COLOR_HSV2BGR)
         cv2.imshow("res", out)
 
-
-    #v.release()
+    # v.release()
     cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()
