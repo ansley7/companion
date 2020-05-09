@@ -177,6 +177,7 @@ def serial_in(comm):
 
 
 def connect(comm):
+    comm_text = "No Connection"
     if comm is None or comm.closed:
         paths = ("/dev/ttyUSB0", "/dev/ttyACM0", "COM3")
         for path in list_ports.comports():
@@ -194,8 +195,6 @@ def connect(comm):
             path = None
         if comm is not None:
             comm_text = "Connected on " + path.device
-    else:
-        comm_text = "No connection"
     return comm, comm_text
 
 
@@ -212,7 +211,7 @@ def main(do_connect, record):
     # cv2.createTrackbar("S max", "res", smax, 255, set_smax)
     # cv2.createTrackbar("V min", "res", vmin, 255, set_vmin)
     # cv2.createTrackbar("V max", "res", vmax, 255, set_vmax)
-    v = cv2.VideoCapture(0)
+    v = cv2.VideoCapture(1)
     cap_width = 1920
     cap_height = 1080
     w = int(cap_width/2)
