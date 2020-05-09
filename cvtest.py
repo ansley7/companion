@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 import os
 import serial
+import argparse
+from serial.tools import list_ports
 from typing import Iterable, Tuple
 
 
@@ -174,7 +176,30 @@ def serial_in(comm):
             print("[Serial] < {}".format(line))
 
 
-def main():
+def connect(comm):
+    if comm is None or comm.closed:
+        paths = ("/dev/ttyUSB0", "/dev/ttyACM0", "COM3")
+        for path in list_ports.comports():
+            if "arduino" not in path.description.lower():
+                print("[Debug] Skipping device [{}] ({})".format(path.device, path.description))
+                continue
+            try:
+                print("[Debug] Trying to connect to [{}]".format(path.device))
+                comm = serial.Serial(path.device, 9600, write_timeout=0)
+                break
+            except serial.SerialException:
+                print("[Debug] Could not connect to [{}]".format(path.device))
+                pass
+        else:
+            path = None
+        if comm is not None:
+            comm_text = "Connected on " + path.device
+    else:
+        comm_text = "No connection"
+    return comm, comm_text
+
+
+def main(do_connect, record):
     # global hmin
     # global hmax
     cv2.namedWindow("res")
@@ -187,7 +212,7 @@ def main():
     # cv2.createTrackbar("S max", "res", smax, 255, set_smax)
     # cv2.createTrackbar("V min", "res", vmin, 255, set_vmin)
     # cv2.createTrackbar("V max", "res", vmax, 255, set_vmax)
-    v = cv2.VideoCapture(1)
+    v = cv2.VideoCapture(0)
     cap_width = 1920
     cap_height = 1080
     w = int(cap_width/2)
@@ -218,6 +243,15 @@ def main():
 
     comm = None
     comm_text = "No connection"
+    if connect:
+        comm, comm_text = connect(comm)
+    if record:
+        vidWriter = cv2.VideoWriter("temp.mjpg",
+        cv2.VideoWriter.fourcc('M','J','P','G'),
+        v.get(cv2.CAP_PROP_FPS),
+        (v.get(cv2.CAP_PROP_FRAME_HEIGHT), v.get(cv2.CAP_PROP_FRAME_WIDTH)))
+    else:
+        vidWriter = None
     debug = True
     while True:
         _, frame = v.read()
@@ -226,6 +260,10 @@ def main():
             break
         inp = cv2.waitKey(1) & 0xFF
         if inp == ord("q"):
+            if comm is not None:
+                comm.close()
+            if vidWriter is not None:
+                vidWriter.release()
             break
         if inp == ord("s"):
             tracker.find_single = not tracker.find_single
@@ -241,23 +279,7 @@ def main():
 
         tracker.update(out, draw=debug)
         if inp == ord("c"):
-            if comm is None or comm.closed:
-                if os.path.exists("/dev/ttyUSB0"):
-                    path = "/dev/ttyUSB0"
-                elif os.path.exists("/dev/ttyACM0"):
-                    path = "/dev/ttyACM0"
-                else:
-                    path = None
-                if path is not None:
-                    cv2.putText(out, "Connecting...", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 240, 240), 1)
-                    try:
-                        comm = serial.Serial(path, 9600, write_timeout=0)
-                    except serial.SerialException:
-                        pass
-                    if comm is not None:
-                        comm_text = "Connected on " + path
-                    else:
-                        comm_text = "No connection"
+            comm, comm_text = connect(comm)
         else:
             cv2.putText(out, comm_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 240, 240), 1)
             msg = dir_to_char[tracker.current_direction]
@@ -269,13 +291,19 @@ def main():
         # draw the image - convert to BGR since cv2 uses bgr to draw
         out = cv2.cvtColor(out, cv2.COLOR_HSV2BGR)
         cv2.imshow("res", out)
+        if record:
+            vidWriter.write(out)
 
     # v.release()
     cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--connect", "-c", action="store_true")
+    parser.add_argument("--record", "-r", action="store_true")
+    args = parser.parse_args()
+    main(do_connect=args.connect, record=args.record)
 
 # at 220, (420-230) = 190 -> 1ft
 # at 260, (460-190) = 270 -> 1ft
