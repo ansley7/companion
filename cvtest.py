@@ -30,7 +30,8 @@ class LegoTracker:
                  right_slope: float,
                  left_yint: int,
                  right_yint: int,
-                 horizon: int,
+                 low_horizon: int,
+                 high_horizon: int,
                  width: int,
                  height: int,
                  find_single: bool,
@@ -42,7 +43,7 @@ class LegoTracker:
         self.left_yint = left_yint
         self.right_slope = right_slope
         self.right_yint = right_yint
-        self.horizon = horizon
+        self.horiz_range = range(low_horizon, high_horizon)
         self.width = width
         self.height = height
         self.find_single = find_single
@@ -50,12 +51,12 @@ class LegoTracker:
         self.current_direction = None
         self.side_color = {
             -1: (300, 240, 240),
-            0: (0, 0, 255),
+            0: (90, 240, 255),
             1: (120, 240, 240)
             }
 
     def get_max_contour(self, contours):
-        contours = filter(lambda cont: (len([pt for pt in cont if pt[0][1] < self.horizon]) == 0) and
+        contours = filter(lambda cont: (len([pt for pt in cont if pt[0][1] < self.horiz_range.start or pt[0][1] > self.horiz_range.stop]) == 0) and
                                        (cv2.contourArea(cont) > 100),
                           contours)
         return max(contours, key=cv2.contourArea, default=None)
@@ -79,7 +80,7 @@ class LegoTracker:
         vmin, vmax = self.value_range
         for hmin, hmax in self.hues:
             mask = cv2.inRange(frame, (hmin, smin, vmin), (hmax, smax, vmax))
-            contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            _, contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             poss = self.get_max_contour(contours)
             if poss is not None and (largest is None or cv2.contourArea(poss) > cv2.contourArea(largest)):
                 largest = poss
@@ -120,7 +121,8 @@ class LegoTracker:
 
     def draw_guides(self, frame):
         # horizon
-        cv2.line(frame, (0, self.horizon), (self.width, self.horizon), (0, 0, 0), 1)
+        cv2.line(frame, (0, self.horiz_range.start), (self.width, self.horiz_range.start), (0, 0, 0), 1)
+        cv2.line(frame, (0, self.horiz_range.stop), (self.width, self.horiz_range.stop), (0, 0, 0), 1)
         # center line
         cv2.line(frame, (int(self.width/2), 0), (int(self.width/2), self.height), (0, 0, 0), 1)
 
@@ -225,7 +227,7 @@ def main(do_connect, record):
 
     hues = (red_hue, orange_hue, lime_hue, green_hue, sky_hue)
 
-    tracker = LegoTracker(hues, 50, 110, -1.519, 1.320, 616, -665, 0, w, h, True)
+    tracker = LegoTracker(hues, 50, 110, -1.612, 1.672, 915, -668, 180, h, w, h, True)
 
     v.set(cv2.CAP_PROP_FRAME_HEIGHT, cap_width)
     v.set(cv2.CAP_PROP_FRAME_WIDTH, cap_height)
@@ -240,34 +242,43 @@ def main(do_connect, record):
         None: b"s"
     }
 
+    numFrames = v.get(cv2.CAP_PROP_FRAME_COUNT)
+    frameNum = 0
+
+    pause = False
     comm = None
     comm_text = "No connection"
-    if connect:
+    if do_connect:
         comm, comm_text = connect(comm)
     if record:
-        vidWriter = cv2.VideoWriter("temp.mjpg",
-        cv2.VideoWriter.fourcc('M','J','P','G'),
+        vidWriter = cv2.VideoWriter("temp.avi",
+        cv2.VideoWriter.fourcc(*"XVID"),
         v.get(cv2.CAP_PROP_FPS),
-        (v.get(cv2.CAP_PROP_FRAME_HEIGHT), v.get(cv2.CAP_PROP_FRAME_WIDTH)))
+        (w, h))
     else:
         vidWriter = None
     debug = True
     while True:
-        _, frame = v.read()
-        if frame is None:
-            print("No frame, exiting.")
-            break
         inp = cv2.waitKey(1) & 0xFF
         if inp == ord("q"):
-            if comm is not None:
-                comm.close()
-            if vidWriter is not None:
-                vidWriter.release()
             break
         if inp == ord("s"):
             tracker.find_single = not tracker.find_single
         if inp == ord("d"):
             debug = not debug
+        if inp == ord("p"):
+            pause = not pause
+        if pause:
+            continue
+        if numFrames > 0:
+            frameNum += 1
+            if frameNum >= numFrames:
+                frameNum = 0
+                v.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        _, frame = v.read()
+        if frame is None:
+            print("No frame, exiting.")
+            break
 
         frame = cv2.resize(frame, (w,h), interpolation=cv2.INTER_AREA)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -294,6 +305,11 @@ def main(do_connect, record):
             vidWriter.write(out)
 
     # v.release()
+    if comm is not None:
+        comm.close()
+    if vidWriter is not None:
+        vidWriter.release()
+    v.release()
     cv2.destroyAllWindows()
 
 
