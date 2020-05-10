@@ -190,7 +190,7 @@ def connect(comm):
     if comm is None or comm.closed:
         paths = ("/dev/ttyUSB0", "/dev/ttyACM0", "COM3")
         for path in list_ports.comports():
-            if path.description and "arduino" not in path.description.lower():
+            if path.description and "arduino" not in path.description.lower() and path.description not in path.device:
                 print("[Debug] Skipping device [{}] ({})".format(path.device, path.description))
                 continue
             try:
@@ -220,7 +220,7 @@ def main(do_connect, record):
     # cv2.createTrackbar("S max", "res", smax, 255, set_smax)
     # cv2.createTrackbar("V min", "res", vmin, 255, set_vmin)
     # cv2.createTrackbar("V max", "res", vmax, 255, set_vmax)
-    video_src = 0
+    video_src = 1
     v = cv2.VideoCapture(video_src)
     cap_width = 1920
     cap_height = 1080
