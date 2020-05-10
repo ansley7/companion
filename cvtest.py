@@ -170,11 +170,18 @@ def serial_out(comm, buf):
     print("[Serial] > {}".format(buf))
 
 
+ser_in_buf = ""
+
+
 def serial_in(comm):
     if comm is not None and comm.in_waiting > 0:
-        inp = comm.read_all()
-        inp = inp.splitlines()
+        inp = ser_in_buf + comm.read_all()
+        inp = inp.splitlines(true)
         for line in inp:
+            if not line:
+                continue
+            if "\n" not in line:
+                ser_in_buf = line
             print("[Serial] < {}".format(line))
 
 
@@ -183,7 +190,7 @@ def connect(comm):
     if comm is None or comm.closed:
         paths = ("/dev/ttyUSB0", "/dev/ttyACM0", "COM3")
         for path in list_ports.comports():
-            if "arduino" not in path.description.lower():
+            if path.description and "arduino" not in path.description.lower():
                 print("[Debug] Skipping device [{}] ({})".format(path.device, path.description))
                 continue
             try:
@@ -213,7 +220,8 @@ def main(do_connect, record):
     # cv2.createTrackbar("S max", "res", smax, 255, set_smax)
     # cv2.createTrackbar("V min", "res", vmin, 255, set_vmin)
     # cv2.createTrackbar("V max", "res", vmax, 255, set_vmax)
-    v = cv2.VideoCapture(1)
+    video_src = 0
+    v = cv2.VideoCapture(video_src)
     cap_width = 1920
     cap_height = 1080
     w = int(cap_width/2)
@@ -242,7 +250,7 @@ def main(do_connect, record):
         None: b"s"
     }
 
-    numFrames = v.get(cv2.CAP_PROP_FRAME_COUNT)
+    numFrames = v.get(cv2.CAP_PROP_FRAME_COUNT) if isinstance(video_src, str) else -1
     frameNum = 0
 
     pause = False
