@@ -171,21 +171,27 @@ void updateOrders(void *pvParameters) {
       switch (Serial.read()) {
         case 'g':
           do_drive = true;
+          Serial.println("Going!");
           break;
         case 'q':
           do_drive = false;
+          Serial.println("Stopping!");
           break;
         case 'r': // turn right to get brick
           drive_state = GO_RIGHT;
+          Serial.println("Hard right");
           break;
-        case 'l': // turn right to get brick
+        case 'l': // turn left to get brick
           drive_state = GO_LEFT;
+          Serial.println("Hard left");
           break;
-        case 'f': // turn right to get brick
+        case 'f': // drive straight to get brick
           drive_state = GO_FORWARD;
+          Serial.println("Forward");
           break;
-        case 's': // turn right to get brick
+        case 's': // roam to hope to find a brick
           drive_state = SEARCH;
+          Serial.println("Searching");
           break;
         default:
           break;
