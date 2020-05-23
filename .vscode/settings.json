@@ -1,0 +1,12 @@
+{
+    "python.linting.pylintEnabled": true,
+    "python.linting.mypyEnabled": false,
+    "python.linting.enabled": true,
+    "python.linting.banditEnabled": false,
+    "python.linting.flake8Enabled": false,
+    "python.linting.pylamaEnabled": false,
+    "python.linting.prospectorEnabled": false,
+    "python.linting.pydocstyleEnabled": false,
+    "python.linting.pycodestyleEnabled": false
+    "python.pythonPath": "C:\\Users\\sleyt\\AppData\\Local\\Programs\\Python\\Python38-32\\python.exe"
+}

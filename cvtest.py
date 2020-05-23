@@ -1,5 +1,14 @@
+#import sys
+#is_py2 = sys.version[0] == '2'
+#if is_py2:
+#    import Queue as queue
+#else:
+#    import queue as qu
+from queue import Queue
+import subprocess
 import cv2
 import numpy as np
+import time
 import os
 import serial
 from typing import Iterable, Tuple
@@ -33,6 +42,10 @@ class LegoTracker:
                  height: int,
                  find_single: bool,
                  ):
+        # Connect to the Arduino via serial port connection. If we're testing without the Arduino then set it to
+        # False in the line below so we don't get stuck waiting/hanging for the serial connection to complete
+        self.serialPort = self.com_connect() if True else None  # True for running - False for testing
+
         self.hues = hues
         self.saturation_range = (saturation_min, 255)
         self.value_range = (value_min, 255)
@@ -158,7 +171,33 @@ class LegoTracker:
             self.draw_contour(frame, cont, color)
             self.draw_guides(frame)
             self.write_text(frame)
-
+# Send serial command to Arduino. If the last command that we've sent is the same as the one we're trying to send
+    # now, then ignore it since the Arduino already has the up-to-date command. Note that there's a commented out
+    # section of this code that made it so that even if the command was a duplicate of the last send one,
+    # it would still send the command as long as a certain time period had passed. Depending on how the Arduino code
+    # worked this may have been necessary, but we did not need it.
+    def send_serial_command(self, direction_enum, dataToSend):
+        # If this command is different than the last command sent, then we should sent it
+        # Or if it's the same command but it's been 1 second since we last sent a command, then we should send it
+        if self.serialPort is not None:
+            if self.lastCommandSentViaSerial != direction_enum:
+                self.serialPort.write(dataToSend)
+                self.lastCommandSentViaSerial = direction_enum
+                self.lastCommandSentViaSerialTime = time.time()
+            # elif (time.time() - self.lastCommandSentViaSerialTime > 1): # TODO also need null check here
+            #    self.serialPort.write(dataToSend)
+            #    self.lastCommandSentViaSerialTime = time.time()
+            else:
+                pass  # Do nothing - same command sent recently
+# Call this when closing this openCV process. It will stop the WebcamVideoStream thread, close all openCV
+    # windows, and close the SerialPort as long as it exists (if we're connected to an Arduino).
+    def cleanup_resources(self):
+        # TODO change the order of stream release and stop() - see what happens
+        self.vs.stop()
+        # self.vs.stream.release() # TODO this should be called but is throwing errors - it works as-is though
+        cv2.destroyAllWindows()  # Not necessary since I do it at the end of every method
+        if self.serialPort is not None:  # Close serialPort if it exists
+            self.serialPort.close()
 
 def serial_out(comm, buf):
     if comm is not None:
@@ -273,7 +312,32 @@ def main():
     # v.release()
     cv2.destroyAllWindows()
 
+# Main driver that listens to the queue and initiates actions accordingly (this is called externally by our weaver
+# class)
+def run(cvQueue: Queue):
+    # Initialize an object for the class - this will connect to the webcam and serial port and begin grabbing frames
+    cvObject = LegoTracker()
 
+    while True:
+        if not cvQueue.empty():  # If there's something in the queue...
+
+            commandFromQueue = cvQueue.get()
+            cvQueue.task_done()
+
+            if commandFromQueue == "terminate":
+                cvObject.cleanup_resources()
+                print("Terminate OpenCV")
+                return
+            elif commandFromQueue == "halt":
+                cvObject.send_serial_command(Direction.STOP, b'h')
+                print("Sent halt command")
+            elif commandFromQueue == "pickupLegos":
+                cvObject.LegoTracker(False, cvQueue)
+            elif commandFromQueue == "halt":
+                pass
+ 
+    # The below is used when running LegoTracker from the command line (python3 LegoTracker). This used to
+# test functionality.
 if __name__ == "__main__":
     main()
 
